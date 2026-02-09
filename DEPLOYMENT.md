@@ -13,22 +13,99 @@
 - [ ] Enabled group support (`/setjoingroups` → ENABLE)
 
 ### 2. Code Ready
-- [ ] All files created (14 files total)
+- [ ] All files created (17 files total)
 - [ ] `requirements.txt` has all dependencies
 - [ ] `.gitignore` configured
 - [ ] `.env.example` template created
 - [ ] `README.md` complete
+- [ ] `Dockerfile` created
+- [ ] `fly.toml` configured
 
 ### 3. Git Repository
-- [ ] Initialize git: `git init`
-- [ ] Add files: `git add .`
-- [ ] Commit: `git commit -m "Initial commit: PnakoticBot v1.0.0"`
-- [ ] Create GitHub repository
-- [ ] Push to GitHub: `git remote add origin <url> && git push -u origin main`
+- [x] Initialize git: `git init`
+- [x] Add files: `git add .`
+- [x] Commit: `git commit -m "Initial commit: PnakoticBot v1.0.0"`
+- [x] Create GitHub repository
+- [x] Push to GitHub: `git remote add origin <url> && git push -u origin main`
 
 ---
 
-## 🌐 Render Deployment
+## ✈️ Fly.io Deployment (Recommended)
+
+### 1. Install Fly CLI
+```bash
+# macOS
+brew install flyctl
+
+# Linux
+curl -L https://fly.io/install.sh | sh
+
+# Windows
+powershell -Command "iwr https://fly.io/install.ps1 -useb | iex"
+```
+
+### 2. Sign Up / Login
+```bash
+# Sign up for new account
+fly auth signup
+
+# Or login to existing account
+fly auth login
+```
+
+### 3. Launch the App
+```bash
+# From project directory
+fly launch --no-deploy
+
+# This will:
+# - Detect Dockerfile
+# - Use fly.toml configuration
+# - Ask you to confirm app name (pnakoticbot)
+# - Select region (choose closest to you)
+# - Create app without deploying yet
+```
+
+### 4. Set Secrets (Environment Variables)
+```bash
+# Set bot token (REQUIRED)
+fly secrets set TELEGRAM_BOT_TOKEN=8572725963:AAEucyStFJbVY053nDXUakUdLPfErIb5wPo
+
+# Webhook URL will be: https://pnakoticbot.fly.dev/webhook
+fly secrets set WEBHOOK_URL=https://pnakoticbot.fly.dev/webhook
+```
+
+**Note**: Other environment variables (PORT, CACHE_TTL_HOURS, LOG_LEVEL) are already set in `fly.toml`
+
+### 5. Deploy
+```bash
+fly deploy
+```
+
+This will:
+- Build Docker image
+- Deploy to Fly.io
+- Start the bot
+- Give you URL: `https://pnakoticbot.fly.dev`
+
+### 6. Verify Deployment
+```bash
+# Check app status
+fly status
+
+# View logs
+fly logs
+
+# Check health endpoint
+curl https://pnakoticbot.fly.dev/health
+```
+
+---
+
+## 🌐 Alternative: Render Deployment
+
+<details>
+<summary>Click to expand Render.com instructions</summary>
 
 ### 1. Create Render Account
 - [ ] Sign up at https://render.com
@@ -62,27 +139,28 @@ In Render dashboard, add these:
 - [ ] Check logs for success message
 - [ ] Note your app URL (e.g., `https://pnakoticbot.onrender.com`)
 
+</details>
+
 ---
 
 ## 🔗 Webhook Configuration
 
 ### Set Webhook
 
-Replace `<TOKEN>` and `<WEBHOOK_URL>`:
-
+**For Fly.io:**
 ```bash
-curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook?url=<WEBHOOK_URL>/webhook"
+curl -X POST "https://api.telegram.org/bot8572725963:AAEucyStFJbVY053nDXUakUdLPfErIb5wPo/setWebhook?url=https://pnakoticbot.fly.dev/webhook"
 ```
 
-Example:
+**For Render.com:**
 ```bash
-curl -X POST "https://api.telegram.org/bot123456789:ABC.../setWebhook?url=https://pnakoticbot.onrender.com/webhook"
+curl -X POST "https://api.telegram.org/bot8572725963:AAEucyStFJbVY053nDXUakUdLPfErIb5wPo/setWebhook?url=https://pnakoticbot.onrender.com/webhook"
 ```
 
 ### Verify Webhook
 
 ```bash
-curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+curl "https://api.telegram.org/bot8572725963:AAEucyStFJbVY053nDXUakUdLPfErIb5wPo/getWebhookInfo"
 ```
 
 Expected response:
@@ -90,7 +168,7 @@ Expected response:
 {
   "ok": true,
   "result": {
-    "url": "https://pnakoticbot.onrender.com/webhook",
+    "url": "https://pnakoticbot.fly.dev/webhook",
     "has_custom_certificate": false,
     "pending_update_count": 0
   }
@@ -131,11 +209,18 @@ Expected response:
 ## 📊 Post-Deployment
 
 ### Monitoring
-- [ ] Check Render logs for errors
+- [ ] Check logs for errors: `fly logs` (or Render dashboard)
 - [ ] Monitor webhook status periodically
 - [ ] Check cache files are being created (`data/cache/*.json`)
 
 ### Health Checks
+**For Fly.io:**
+- [ ] Visit `https://pnakoticbot.fly.dev/health`
+  - Should return: `{"status": "ok", "bot": "PnakoticBot", "version": "1.0.0"}`
+- [ ] Visit `https://pnakoticbot.fly.dev/`
+  - Should return bot info
+
+**For Render.com:**
 - [ ] Visit `https://pnakoticbot.onrender.com/health`
   - Should return: `{"status": "ok", "bot": "PnakoticBot", "version": "1.0.0"}`
 - [ ] Visit `https://pnakoticbot.onrender.com/`
@@ -144,7 +229,28 @@ Expected response:
 ### Webhook Health
 ```bash
 # Check webhook periodically
-curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+curl "https://api.telegram.org/bot8572725963:AAEucyStFJbVY053nDXUakUdLPfErIb5wPo/getWebhookInfo"
+```
+
+### Fly.io Specific Commands
+```bash
+# View app status
+fly status
+
+# View logs (live)
+fly logs
+
+# SSH into app
+fly ssh console
+
+# Scale app (free tier: 256MB RAM)
+fly scale memory 256
+
+# View app info
+fly info
+
+# Restart app
+fly apps restart pnakoticbot
 ```
 
 ---
@@ -152,10 +258,11 @@ curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 ## 🛠️ Troubleshooting
 
 ### Bot Not Responding
-- [ ] Check Render logs for errors
+- [ ] Check logs: `fly logs` (or Render dashboard)
 - [ ] Verify webhook URL is correct
 - [ ] Verify bot token is correct
-- [ ] Check Render app is running (not sleeping)
+- [ ] Check app is running: `fly status` (or Render dashboard)
+- [ ] For Fly.io: Check if app scaled to zero, wake it with: `fly scale count 1`
 
 ### Rate Limit Issues
 - [ ] Wait 1 minute between requests
@@ -164,7 +271,8 @@ curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 ### Cache Not Working
 - [ ] Check `data/cache/` directory exists
 - [ ] Verify write permissions
-- [ ] Check Render logs for cache errors
+- [ ] Check logs for cache errors: `fly logs` (or Render)
+- [ ] **Note**: Fly.io has ephemeral storage - cache resets on restarts
 
 ### Image Not Loading
 - [ ] Bot should automatically fall back to text-only
@@ -175,13 +283,19 @@ curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 ## 📝 Maintenance
 
 ### Regular Tasks
-- [ ] Monitor Render logs weekly
+- [ ] Monitor logs weekly: `fly logs` (or Render)
 - [ ] Check webhook status monthly
 - [ ] Update dependencies quarterly
 - [ ] Review cache performance
 
 ### Updates
-When updating code:
+**For Fly.io:**
+1. Push changes to GitHub
+2. Run `fly deploy` to deploy changes
+3. Monitor logs: `fly logs`
+4. Test bot functionality
+
+**For Render.com:**
 1. Push changes to GitHub
 2. Render auto-deploys
 3. Monitor logs for errors
@@ -196,8 +310,8 @@ When updating code:
 - Bot responds to `/card <name>` with image + FAQ
 - Bot works in group chats with reply-to-message
 - Webhook status shows correct URL
-- Render health check returns 200 OK
-- No errors in Render logs
+- Health check returns 200 OK
+- No errors in logs
 - Rate limiting works correctly
 - Cache is being populated
 
@@ -205,17 +319,48 @@ When updating code:
 
 ## 📞 Quick Commands Reference
 
+### Fly.io Commands
 ```bash
-# Set webhook
-curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook?url=<URL>/webhook"
+# Deploy
+fly deploy
+
+# View logs
+fly logs
+
+# Check status
+fly status
+
+# Set secrets
+fly secrets set KEY=value
+
+# SSH into app
+fly ssh console
+
+# Restart app
+fly apps restart pnakoticbot
+```
+
+### Telegram Commands
+```bash
+# Set webhook (Fly.io)
+curl -X POST "https://api.telegram.org/bot8572725963:AAEucyStFJbVY053nDXUakUdLPfErIb5wPo/setWebhook?url=https://pnakoticbot.fly.dev/webhook"
+
+# Set webhook (Render)
+curl -X POST "https://api.telegram.org/bot8572725963:AAEucyStFJbVY053nDXUakUdLPfErIb5wPo/setWebhook?url=https://pnakoticbot.onrender.com/webhook"
 
 # Check webhook
-curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+curl "https://api.telegram.org/bot8572725963:AAEucyStFJbVY053nDXUakUdLPfErIb5wPo/getWebhookInfo"
 
 # Delete webhook (for local testing)
-curl -X POST "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
+curl -X POST "https://api.telegram.org/bot8572725963:AAEucyStFJbVY053nDXUakUdLPfErIb5wPo/deleteWebhook"
+```
 
-# Check health
+### Health Check
+```bash
+# Fly.io
+curl "https://pnakoticbot.fly.dev/health"
+
+# Render
 curl "https://pnakoticbot.onrender.com/health"
 ```
 

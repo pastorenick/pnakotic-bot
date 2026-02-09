@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Cache
+data/cache/*.json
+
+# Git
+.git/
+.gitignore
+
+# Docs (don't need in Docker image)
+*.md
+
+# Config files not needed in image
+.editorconfig
+.flake8
+.pre-commit-config.yaml
+
+# Tests (if you add them later)
+tests/
+*.test.py
+
+# Render config (using Fly.io now)
+render.yaml
+Procfile
