@@ -36,11 +36,12 @@ def health():
 
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
+def webhook():
     """Telegram webhook receiver"""
     try:
         update = Update.de_json(request.get_json(force=True), bot_application.bot)
-        await bot_application.process_update(update)
+        # Process update asynchronously in a new event loop
+        asyncio.run(bot_application.process_update(update))
         return Response(status=200)
     except Exception as e:
         logger.error(f"Error processing webhook: {e}", exc_info=True)
