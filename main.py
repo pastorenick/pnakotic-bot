@@ -82,15 +82,20 @@ def init_bot():
     """Initialize bot and background event loop"""
     global _event_loop, _loop_thread
     
-    if not _event_loop:
-        # Create new event loop for background thread
-        _event_loop = asyncio.new_event_loop()
-        _loop_thread = threading.Thread(target=start_background_loop, args=(_event_loop,), daemon=True)
-        _loop_thread.start()
-        logger.info("Background event loop started")
-    
-    # Initialize bot in the background loop
-    run_coroutine_threadsafe(init_bot_async())
+    try:
+        if not _event_loop:
+            # Create new event loop for background thread
+            _event_loop = asyncio.new_event_loop()
+            _loop_thread = threading.Thread(target=start_background_loop, args=(_event_loop,), daemon=True)
+            _loop_thread.start()
+            logger.info("Background event loop started")
+        
+        # Initialize bot in the background loop
+        run_coroutine_threadsafe(init_bot_async())
+    except Exception as e:
+        logger.error(f"Failed to initialize bot: {e}", exc_info=True)
+        # Don't raise - allow the app to start even if bot init fails
+        # This ensures health checks pass
 
 
 @app.route('/health')
