@@ -1,0 +1,19 @@
+# Telegram Bot
+python-telegram-bot==20.8
+python-telegram-bot[webhooks]==20.8
+
+# Web Framework
+flask==3.0.0
+gunicorn==21.2.0
+
+# HTTP & Web Scraping
+requests==2.31.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# Fuzzy Matching
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.25.0
+
+# Utilities
+python-dotenv==1.0.0

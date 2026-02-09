@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: pnakoticbot
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn main:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: PORT
+        value: "10000"
+      - key: CACHE_TTL_HOURS
+        value: "24"
+      - key: LOG_LEVEL
+        value: "INFO"
+      # IMPORTANT: Set TELEGRAM_BOT_TOKEN and WEBHOOK_URL in Render dashboard
