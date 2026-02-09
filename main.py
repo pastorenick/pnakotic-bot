@@ -29,6 +29,38 @@ app = Flask(__name__)
 bot_application = None
 
 
+def init_bot():
+    """Initialize bot application (called on module load for gunicorn)"""
+    global bot_application
+    
+    if bot_application is not None:
+        return bot_application
+    
+    try:
+        logger.info("Initializing PnakoticBot...")
+        bot_application = setup_bot()
+        
+        # Get webhook URL
+        webhook_url = os.getenv('WEBHOOK_URL')
+        if not webhook_url:
+            raise ValueError("WEBHOOK_URL environment variable not set")
+        
+        # Set webhook asynchronously
+        logger.info(f"Setting webhook to {webhook_url}")
+        asyncio.run(bot_application.bot.set_webhook(url=webhook_url))
+        
+        logger.info("PnakoticBot initialized successfully!")
+        return bot_application
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize bot: {e}", exc_info=True)
+        raise
+
+
+# Initialize bot when module loads (for gunicorn)
+init_bot()
+
+
 @app.route('/health')
 def health():
     """Health check endpoint for Render"""
@@ -61,36 +93,21 @@ def index():
 
 
 def main():
-    """Main entry point"""
+    """Main entry point for local development"""
     global bot_application
     
-    try:
-        # Setup Telegram bot
-        logger.info("Setting up PnakoticBot...")
-        bot_application = setup_bot()
-        
-        # Get configuration
-        webhook_url = os.getenv('WEBHOOK_URL')
-        port = int(os.getenv('PORT', 10000))
-        
-        if not webhook_url:
-            raise ValueError("WEBHOOK_URL environment variable not set")
-        
-        # Set webhook
-        logger.info(f"Setting webhook to {webhook_url}")
-        asyncio.get_event_loop().run_until_complete(
-            bot_application.bot.set_webhook(url=webhook_url)
-        )
-        
-        logger.info(f"Starting Flask server on port {port}")
-        logger.info("PnakoticBot is ready to receive messages!")
-        
-        # Run Flask app
-        app.run(host='0.0.0.0', port=port, debug=False)
-        
-    except Exception as e:
-        logger.error(f"Failed to start bot: {e}", exc_info=True)
-        raise
+    # Initialize bot if not already done
+    if bot_application is None:
+        init_bot()
+    
+    # Get port configuration
+    port = int(os.getenv('PORT', 10000))
+    
+    logger.info(f"Starting Flask server on port {port}")
+    logger.info("PnakoticBot is ready to receive messages!")
+    
+    # Run Flask app
+    app.run(host='0.0.0.0', port=port, debug=False)
 
 
 if __name__ == '__main__':
