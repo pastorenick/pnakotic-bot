@@ -60,12 +60,9 @@ async def init_bot_async():
     
     # Check required environment variables
     bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
-    webhook_url = os.getenv('WEBHOOK_URL')
     
     if not bot_token:
         raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
-    if not webhook_url:
-        raise ValueError("WEBHOOK_URL environment variable not set")
     
     # Setup bot
     bot_application = setup_bot()
@@ -73,9 +70,8 @@ async def init_bot_async():
     # Initialize the application (required before processing updates)
     await bot_application.initialize()
     
-    # Set webhook
-    logger.info(f"Setting webhook to {webhook_url}")
-    await bot_application.bot.set_webhook(url=webhook_url)
+    # NOTE: Webhook is set manually via Telegram API due to DNS resolution issues
+    # Don't set webhook here - it's managed externally
     
     _bot_initialized = True
     logger.info("PnakoticBot initialized successfully!")
