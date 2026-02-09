@@ -6,6 +6,8 @@ Entry point combining Flask web server + Telegram bot webhook
 import os
 import asyncio
 import logging
+import threading
+from concurrent.futures import Future
 from flask import Flask, request, Response
 from telegram import Update
 from bot.telegram_bot import setup_bot
@@ -22,12 +24,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Flask app for Render health checks
+# Flask app
 app = Flask(__name__)
 
-# Global bot application
+# Global bot application and event loop
 bot_application = None
 _bot_initialized = False
+_event_loop = None
+_loop_thread = None
+
+
+def start_background_loop(loop):
+    """Run event loop in background thread"""
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+def run_coroutine_threadsafe(coro):
+    """Run a coroutine in the background event loop"""
+    global _event_loop
+    if _event_loop is None:
+        raise RuntimeError("Event loop not initialized")
+    future = asyncio.run_coroutine_threadsafe(coro, _event_loop)
+    return future.result(timeout=60)
 
 
 async def init_bot_async():
@@ -64,8 +83,18 @@ async def init_bot_async():
 
 
 def init_bot():
-    """Synchronous wrapper for bot initialization"""
-    return asyncio.run(init_bot_async())
+    """Initialize bot and background event loop"""
+    global _event_loop, _loop_thread
+    
+    if not _event_loop:
+        # Create new event loop for background thread
+        _event_loop = asyncio.new_event_loop()
+        _loop_thread = threading.Thread(target=start_background_loop, args=(_event_loop,), daemon=True)
+        _loop_thread.start()
+        logger.info("Background event loop started")
+    
+    # Initialize bot in the background loop
+    run_coroutine_threadsafe(init_bot_async())
 
 
 @app.route('/health')
@@ -87,8 +116,8 @@ def webhook():
         # Parse update
         update = Update.de_json(request.get_json(force=True), bot_application.bot)
         
-        # Process update asynchronously
-        asyncio.run(bot_application.process_update(update))
+        # Process update in background event loop
+        run_coroutine_threadsafe(bot_application.process_update(update))
         return Response(status=200)
     except Exception as e:
         logger.error(f"Error processing webhook: {e}", exc_info=True)
@@ -112,7 +141,7 @@ def main():
     global bot_application
     
     # Initialize bot if not already done
-    if bot_application is None:
+    if not _bot_initialized:
         init_bot()
     
     # Get port configuration
