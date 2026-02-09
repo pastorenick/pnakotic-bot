@@ -27,38 +27,42 @@ app = Flask(__name__)
 
 # Global bot application
 bot_application = None
+_bot_initialized = False
 
 
 def init_bot():
-    """Initialize bot application (called on module load for gunicorn)"""
-    global bot_application
+    """Initialize bot application (lazy initialization)"""
+    global bot_application, _bot_initialized
     
-    if bot_application is not None:
+    if _bot_initialized:
         return bot_application
     
     try:
         logger.info("Initializing PnakoticBot...")
-        bot_application = setup_bot()
         
-        # Get webhook URL
+        # Check required environment variables
+        bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         webhook_url = os.getenv('WEBHOOK_URL')
+        
+        if not bot_token:
+            raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
         if not webhook_url:
             raise ValueError("WEBHOOK_URL environment variable not set")
+        
+        # Setup bot
+        bot_application = setup_bot()
         
         # Set webhook asynchronously
         logger.info(f"Setting webhook to {webhook_url}")
         asyncio.run(bot_application.bot.set_webhook(url=webhook_url))
         
+        _bot_initialized = True
         logger.info("PnakoticBot initialized successfully!")
         return bot_application
         
     except Exception as e:
         logger.error(f"Failed to initialize bot: {e}", exc_info=True)
         raise
-
-
-# Initialize bot when module loads (for gunicorn)
-init_bot()
 
 
 @app.route('/health')
@@ -70,7 +74,13 @@ def health():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Telegram webhook receiver"""
+    global bot_application
+    
     try:
+        # Lazy initialization on first webhook
+        if not _bot_initialized:
+            init_bot()
+        
         update = Update.de_json(request.get_json(force=True), bot_application.bot)
         # Process update asynchronously in a new event loop
         asyncio.run(bot_application.process_update(update))
