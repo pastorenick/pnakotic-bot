@@ -79,8 +79,12 @@ async def card_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     
     card_name = ' '.join(context.args)
     
+    # Send typing indicator to show bot is working
+    await update.effective_chat.send_action('typing')
+    
     try:
         # Load card data (lazy load from cache)
+        logger.info(f"Loading cards for query: {card_name}")
         cards = load_cards()
         if not cards:
             await update.message.reply_text("❌ Failed to load card database. Try again later.")
