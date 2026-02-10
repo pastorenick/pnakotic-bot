@@ -143,15 +143,13 @@ async def card_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                         photo=image_url,
                         caption=message,
                         parse_mode='Markdown',
-                        reply_to_message_id=update.message.message_id,
-                        disable_web_page_preview=True
+                        reply_to_message_id=update.message.message_id
                     )
                 else:
                     await update.message.reply_photo(
                         photo=image_url,
                         caption=message,
-                        parse_mode='Markdown',
-                        disable_web_page_preview=True
+                        parse_mode='Markdown'
                     )
             else:
                 # No image URL - send text only
