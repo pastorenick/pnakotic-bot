@@ -244,7 +244,7 @@ async def replace_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await thinking_msg.edit_text("❌ Failed to find replacements. Try again later.")
 
 
-async def send_card_info(update: Update, card: Dict, is_group: bool, query=None) -> None:
+async def send_card_info(update: Update, card: Dict, is_group: bool, query=None, context=None) -> None:
     """
     Send card information with image and FAQ
     
@@ -253,6 +253,7 @@ async def send_card_info(update: Update, card: Dict, is_group: bool, query=None)
         card: Card data dictionary
         is_group: True if in group chat
         query: CallbackQuery if called from button click, None otherwise
+        context: Bot context (needed when query is provided)
     """
     # Determine which message object to use
     msg_obj = query.message if query else update.message
@@ -273,27 +274,29 @@ async def send_card_info(update: Update, card: Dict, is_group: bool, query=None)
             if image_url:
                 # Try to send with image
                 if is_group and not query:
+                    # Direct command in group - reply to user's message
                     await msg_obj.reply_photo(
                         photo=image_url,
                         caption=message,
                         parse_mode='Markdown',
                         reply_to_message_id=update.message.message_id
                     )
+                elif query:
+                    # Callback query - send to chat (not as reply since selection message is deleted)
+                    bot = context.bot if context else update.get_bot()
+                    await bot.send_photo(
+                        chat_id=update.effective_chat.id,
+                        photo=image_url,
+                        caption=message,
+                        parse_mode='Markdown'
+                    )
                 else:
-                    # For callback queries or private chats
-                    if query:
-                        # Edit the original message or send new one
-                        await query.message.reply_photo(
-                            photo=image_url,
-                            caption=message,
-                            parse_mode='Markdown'
-                        )
-                    else:
-                        await msg_obj.reply_photo(
-                            photo=image_url,
-                            caption=message,
-                            parse_mode='Markdown'
-                        )
+                    # Private chat direct command
+                    await msg_obj.reply_photo(
+                        photo=image_url,
+                        caption=message,
+                        parse_mode='Markdown'
+                    )
             else:
                 # No image URL - send text only
                 raise Exception("No image URL available")
@@ -303,6 +306,7 @@ async def send_card_info(update: Update, card: Dict, is_group: bool, query=None)
             logger.warning(f"Image send failed for {card['name']}: {e}")
             
             if is_group and not query:
+                # Direct command in group - reply to user's message
                 await msg_obj.reply_text(
                     message,
                     parse_mode='Markdown',
@@ -310,13 +314,16 @@ async def send_card_info(update: Update, card: Dict, is_group: bool, query=None)
                     disable_web_page_preview=True
                 )
             elif query:
-                # For callback queries, send to the chat where the query came from
-                await query.message.reply_text(
-                    message,
+                # Callback query - send to chat (not as reply)
+                bot = context.bot if context else update.get_bot()
+                await bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=message,
                     parse_mode='Markdown',
                     disable_web_page_preview=True
                 )
             else:
+                # Private chat direct command
                 await msg_obj.reply_text(
                     message,
                     parse_mode='Markdown',
@@ -359,12 +366,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # Check if this is a group
         is_group = update.effective_chat.type in ['group', 'supergroup']
         
-        # Send the card info
-        await send_card_info(update, card, is_group, query)
+        # Send the card info (pass context so it can use bot.send_message)
+        await send_card_info(update, card, is_group, query, context)
         
     except Exception as e:
         logger.error(f"Error in button_callback: {e}", exc_info=True)
-        await query.edit_message_text("❌ Something went wrong. Please try again.")
+        # Try to edit message if it still exists, otherwise ignore
+        try:
+            await query.edit_message_text("❌ Something went wrong. Please try again.")
+        except:
+            pass
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
