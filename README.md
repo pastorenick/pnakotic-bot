@@ -11,6 +11,7 @@ Works in both **private chats** and **group chats** with intelligent fuzzy searc
 - 🔍 **Smart Search** - Exact match → Partial match → Fuzzy match (handles typos!)
 - 🖼️ **Card Images** - High-quality images from CloudFront CDN
 - ❓ **Complete FAQs** - All FAQ entries for each card (no truncation)
+- 🔄 **Card Replacements** - AI-powered similar card suggestions for deck building
 - 💬 **Group Support** - Works in private chats and group chats
 - ⏱️ **Rate Limiting** - 10 requests/min (users), 5 requests/min (groups)
 - 📦 **Smart Caching** - 24-hour cache to reduce API calls (lazy load)
@@ -24,6 +25,7 @@ Works in both **private chats** and **group chats** with intelligent fuzzy searc
 |---------|-------------|---------|
 | `/start` | Welcome message and usage guide | `/start` |
 | `/card <name>` | Fetch card info (image + FAQ) | `/card Blink` |
+| `/replace <name>` | Find similar replacement cards | `/replace Apprentice Wizard` |
 | `/help` | Show available commands | `/help` |
 
 ### Usage Examples
@@ -33,7 +35,42 @@ Works in both **private chats** and **group chats** with intelligent fuzzy searc
 /card Apprentice Wizard      → Fetch "Apprentice Wizard"
 /card blinc                  → Auto-corrects to "Blink" (fuzzy)
 /card fire                   → Shows multiple matches
+/replace Apprentice Wizard   → Get 3 similar cards based on abilities
 /card@pnakoticbot Blink      → Explicit mention (for multi-bot groups)
+```
+
+### /replace - Card Replacement Finder
+
+The `/replace` command uses AI-powered matching to suggest similar cards when you want to swap cards in your deck.
+
+**Matching Criteria:**
+- **Primary**: Similar abilities and keywords (50% weight)
+- **Secondary**: Element/thresholds (25%), Mana cost ±1 (15%)
+- **Bonus**: Same card type (10%)
+
+**Example:**
+```
+/replace Apprentice Wizard
+
+🔄 Replacements for Apprentice Wizard:
+
+1. Arcane Scholar (Match: 68%)
+• Minion - Cost: 3
+• 2/2
+• Elements: Air
+• Match: similar abilities, same element, similar cost
+
+2. Young Mage (Match: 54%)
+• Minion - Cost: 2
+• 1/1
+• Elements: Air/Water
+• Match: similar abilities, similar cost
+
+3. Novice Conjurer (Match: 47%)
+• Minion - Cost: 4
+• 2/3
+• Elements: Air
+• Match: similar abilities, same element
 ```
 
 ---
@@ -73,6 +110,7 @@ Send these commands to @BotFather:
 Then paste:
 start - Welcome message and usage guide
 card - Fetch card info (usage: /card <name>)
+replace - Find similar replacement cards (usage: /replace <name>)
 help - Show available commands
 ```
 
@@ -264,6 +302,7 @@ OwlBot/
 │   ├── cache.py                 # JSON file caching (lazy load)
 │   ├── card_fetcher.py          # Sorcery API client + fuzzy search
 │   ├── faq_scraper.py           # Curiosa.io FAQ scraper
+│   ├── replacement_finder.py    # AI-powered card replacement engine
 │   ├── telegram_bot.py          # Bot command handlers
 │   └── utils.py                 # Rate limiting + message formatting
 │

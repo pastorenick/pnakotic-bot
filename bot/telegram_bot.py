@@ -15,6 +15,7 @@ from telegram.ext import (
 from bot.card_fetcher import search_card, get_card_image_url, load_cards
 from bot.faq_scraper import get_card_faq, load_faqs
 from bot.utils import is_rate_limited, format_card_message
+from bot.replacement_finder import find_replacements, format_replacement_explanation
 import os
 import logging
 from typing import Dict, List
@@ -35,10 +36,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "I can fetch Sorcery: Contested Realm card information from curiosa.io.\n\n"
         "📋 *Commands:*\n"
         "`/card <name>` - Get card image and FAQ\n"
+        "`/replace <name>` - Find similar replacement cards\n"
         "`/help` - Show this help message\n\n"
         "📝 *Examples:*\n"
         "`/card Blink`\n"
-        "`/card Apprentice Wizard`\n\n"
+        "`/replace Apprentice Wizard`\n\n"
         "💡 *Tip:* I can handle typos and partial names!\n\n"
         "🔗 Data from [curiosa.io](https://curiosa.io)"
     )
@@ -153,6 +155,95 @@ async def card_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
 
 
+async def replace_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle /replace <card_name> command
+    Suggests similar cards that can replace the given card
+    """
+    # Check rate limiting
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    is_group = update.effective_chat.type in ['group', 'supergroup']
+    
+    if is_rate_limited(user_id if not is_group else chat_id, is_group):
+        error_msg = "⏳ Rate limit exceeded. Please wait a moment."
+        await update.message.reply_text(error_msg)
+        return
+    
+    # Parse card name from command
+    if not context.args:
+        if is_group:
+            msg = "❌ Provide card name"
+        else:
+            msg = "❌ Please provide a card name.\nExample: `/replace Apprentice Wizard`"
+        
+        await update.message.reply_text(msg, parse_mode='Markdown')
+        return
+    
+    query = ' '.join(context.args)
+    
+    # Load cards
+    cards = load_cards()
+    if not cards:
+        await update.message.reply_text("❌ Failed to load card database")
+        return
+    
+    # Search for the card
+    result = search_card(query, cards)
+    
+    if not result:
+        if is_group:
+            await update.message.reply_text("❌ Card not found")
+        else:
+            await update.message.reply_text(f"❌ No card found for '{query}'")
+        return
+    
+    # Handle multiple matches
+    if isinstance(result, list):
+        if is_group:
+            msg = f"❌ '{query}' matches multiple cards. Be more specific."
+        else:
+            card_names = [c['name'] for c in result[:5]]
+            msg = f"❌ Multiple cards match '{query}':\n" + '\n'.join(f"• {n}" for n in card_names)
+        
+        await update.message.reply_text(msg)
+        return
+    
+    # Single card found - find replacements
+    card = result
+    
+    # Show "thinking" message
+    thinking_msg = await update.message.reply_text(f"🔍 Finding replacements for *{card['name']}*...", parse_mode='Markdown')
+    
+    try:
+        # Find replacement suggestions
+        replacements = find_replacements(card['name'], cards, max_results=3, min_score=30.0)
+        
+        if not replacements:
+            await thinking_msg.edit_text(
+                f"❌ No suitable replacements found for *{card['name']}*.\n\n"
+                f"Try cards with similar abilities or elements.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Format response
+        response_lines = [f"🔄 *Replacements for {card['name']}:*\n"]
+        
+        for i, replacement in enumerate(replacements, 1):
+            response_lines.append(f"{i}. {format_replacement_explanation(card, replacement)}")
+            response_lines.append("")  # Blank line between cards
+        
+        response = '\n'.join(response_lines)
+        
+        # Send replacement suggestions
+        await thinking_msg.edit_text(response, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"Error finding replacements: {e}", exc_info=True)
+        await thinking_msg.edit_text("❌ Failed to find replacements. Try again later.")
+
+
 async def send_card_info(update: Update, card: Dict, is_group: bool, query=None) -> None:
     """
     Send card information with image and FAQ
@@ -216,6 +307,13 @@ async def send_card_info(update: Update, card: Dict, is_group: bool, query=None)
                     message,
                     parse_mode='Markdown',
                     reply_to_message_id=update.message.message_id,
+                    disable_web_page_preview=True
+                )
+            elif query:
+                # For callback queries, send to the chat where the query came from
+                await query.message.reply_text(
+                    message,
+                    parse_mode='Markdown',
                     disable_web_page_preview=True
                 )
             else:
@@ -299,6 +397,7 @@ def setup_bot() -> Application:
     application.add_handler(CommandHandler('start', start_command))
     application.add_handler(CommandHandler('help', help_command))
     application.add_handler(CommandHandler('card', card_command))
+    application.add_handler(CommandHandler('replace', replace_command))
     
     # Add callback query handler for inline keyboard buttons
     application.add_handler(CallbackQueryHandler(button_callback))
