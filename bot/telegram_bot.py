@@ -119,8 +119,12 @@ async def card_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             # Create inline keyboard with card name buttons
             keyboard = []
             for card in matches:
-                # Use card slug as callback data (more reliable than name)
-                callback_data = f"card:{card['slug']}"
+                # Use card name as callback data (encode to handle special chars)
+                # Limit to 64 bytes for Telegram's callback_data limit
+                callback_data = f"card:{card['name']}"
+                if len(callback_data.encode('utf-8')) > 64:
+                    # Truncate if too long (rare edge case)
+                    callback_data = callback_data[:61] + "..."
                 button = InlineKeyboardButton(card['name'], callback_data=callback_data)
                 keyboard.append([button])  # One button per row
             
@@ -240,12 +244,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text("❌ Invalid selection")
         return
     
-    card_slug = query.data.split(":", 1)[1]
+    card_name = query.data.split(":", 1)[1]
     
     try:
         # Load cards and find the selected one
         cards = load_cards()
-        card = next((c for c in cards if c['slug'] == card_slug), None)
+        card = next((c for c in cards if c['name'] == card_name), None)
         
         if not card:
             await query.edit_message_text("❌ Card not found")
