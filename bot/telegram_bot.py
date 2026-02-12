@@ -3,10 +3,11 @@ Telegram bot command handlers
 Supports both private chats and group chats with brief error messages in groups
 """
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, 
     CommandHandler, 
+    CallbackQueryHandler,
     ContextTypes,
     MessageHandler,
     filters
@@ -105,26 +106,64 @@ async def card_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         
         elif isinstance(result, list):
-            # Multiple matches - brief in groups
+            # Multiple matches - show inline keyboard with options
             if is_group:
-                msg = f"🔍 {len(result)} matches. Be more specific."
+                # In groups, keep it brief with first few options
+                matches = result[:5]
+                msg = f"🔍 Found {len(result)} matches. Select one:"
             else:
-                names = [c['name'] for c in result[:5]]
-                msg = (
-                    f"🔍 Found {len(result)} matches for '{card_name}':\n\n" +
-                    '\n'.join(f"• {name}" for name in names)
-                )
-                if len(result) > 5:
-                    msg += f"\n\n...and {len(result) - 5} more."
-                msg += "\n\nPlease be more specific."
+                # In private chats, show up to 10 options
+                matches = result[:10]
+                msg = f"🔍 Found {len(result)} matches for '{card_name}'. Select one:"
             
-            await update.message.reply_text(msg)
+            # Create inline keyboard with card name buttons
+            keyboard = []
+            for card in matches:
+                # Use card slug as callback data (more reliable than name)
+                callback_data = f"card:{card['slug']}"
+                button = InlineKeyboardButton(card['name'], callback_data=callback_data)
+                keyboard.append([button])  # One button per row
+            
+            # Add "Cancel" button at the end
+            keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if is_group:
+                await update.message.reply_text(
+                    msg,
+                    reply_markup=reply_markup,
+                    reply_to_message_id=update.message.message_id
+                )
+            else:
+                await update.message.reply_text(msg, reply_markup=reply_markup)
             return
         
-        # Single card found
-        card = result
-        
-        # Load FAQ data (lazy load from cache)
+        # Single card found - show card info
+        await send_card_info(update, result, is_group)
+    
+    except Exception as e:
+        logger.error(f"Error in card_command: {e}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Something went wrong. Please try again later."
+        )
+
+
+async def send_card_info(update: Update, card: Dict, is_group: bool, query=None) -> None:
+    """
+    Send card information with image and FAQ
+    
+    Args:
+        update: Telegram update
+        card: Card data dictionary
+        is_group: True if in group chat
+        query: CallbackQuery if called from button click, None otherwise
+    """
+    # Determine which message object to use
+    msg_obj = query.message if query else update.message
+    
+    try:
+        # Load FAQ data
         faqs = load_faqs()
         card_faqs = get_card_faq(card['name'], faqs)
         
@@ -138,46 +177,92 @@ async def card_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         try:
             if image_url:
                 # Try to send with image
-                if is_group:
-                    await update.message.reply_photo(
+                if is_group and not query:
+                    await msg_obj.reply_photo(
                         photo=image_url,
                         caption=message,
                         parse_mode='Markdown',
                         reply_to_message_id=update.message.message_id
                     )
                 else:
-                    await update.message.reply_photo(
-                        photo=image_url,
-                        caption=message,
-                        parse_mode='Markdown'
-                    )
+                    # For callback queries or private chats
+                    if query:
+                        # Edit the original message or send new one
+                        await query.message.reply_photo(
+                            photo=image_url,
+                            caption=message,
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await msg_obj.reply_photo(
+                            photo=image_url,
+                            caption=message,
+                            parse_mode='Markdown'
+                        )
             else:
                 # No image URL - send text only
                 raise Exception("No image URL available")
         
         except Exception as e:
-            # Image failed - send text-only response (as per user preference)
+            # Image failed - send text-only response
             logger.warning(f"Image send failed for {card['name']}: {e}")
             
-            if is_group:
-                await update.message.reply_text(
+            if is_group and not query:
+                await msg_obj.reply_text(
                     message,
                     parse_mode='Markdown',
                     reply_to_message_id=update.message.message_id,
                     disable_web_page_preview=True
                 )
             else:
-                await update.message.reply_text(
+                await msg_obj.reply_text(
                     message,
                     parse_mode='Markdown',
                     disable_web_page_preview=True
                 )
-    
     except Exception as e:
-        logger.error(f"Error in card_command: {e}", exc_info=True)
-        await update.message.reply_text(
-            "❌ Something went wrong. Please try again later."
-        )
+        logger.error(f"Error sending card info: {e}", exc_info=True)
+        await msg_obj.reply_text("❌ Failed to send card info. Try again later.")
+
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline keyboard button presses"""
+    query = update.callback_query
+    await query.answer()  # Acknowledge the button press
+    
+    # Parse callback data
+    if query.data == "cancel":
+        await query.edit_message_text("❌ Cancelled")
+        return
+    
+    # Extract card slug from callback data
+    if not query.data.startswith("card:"):
+        await query.edit_message_text("❌ Invalid selection")
+        return
+    
+    card_slug = query.data.split(":", 1)[1]
+    
+    try:
+        # Load cards and find the selected one
+        cards = load_cards()
+        card = next((c for c in cards if c['slug'] == card_slug), None)
+        
+        if not card:
+            await query.edit_message_text("❌ Card not found")
+            return
+        
+        # Delete the selection message
+        await query.message.delete()
+        
+        # Check if this is a group
+        is_group = update.effective_chat.type in ['group', 'supergroup']
+        
+        # Send the card info
+        await send_card_info(update, card, is_group, query)
+        
+    except Exception as e:
+        logger.error(f"Error in button_callback: {e}", exc_info=True)
+        await query.edit_message_text("❌ Something went wrong. Please try again.")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -210,6 +295,9 @@ def setup_bot() -> Application:
     application.add_handler(CommandHandler('start', start_command))
     application.add_handler(CommandHandler('help', help_command))
     application.add_handler(CommandHandler('card', card_command))
+    
+    # Add callback query handler for inline keyboard buttons
+    application.add_handler(CallbackQueryHandler(button_callback))
     
     # Error handler
     application.add_error_handler(error_handler)
