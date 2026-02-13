@@ -22,8 +22,10 @@ build/
 *.swo
 *~
 
-# Cache
-data/cache/*.json
+# Cache (exclude cards.json and faqs.json - they're fetched at runtime)
+# But include embeddings.json - it's pre-generated and needed for similarity search
+data/cache/cards.json
+data/cache/faqs.json
 
 # Git
 .git/
