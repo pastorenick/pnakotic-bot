@@ -533,10 +533,13 @@ def _get_semantic_similarity_reason(target_card: Dict, candidate_card: Dict, sim
     Returns:
         Human-readable explanation
     """
-    target_text = (target_card.get('rulesText', '') or '').lower()
-    cand_text = (candidate_card.get('rulesText', '') or '').lower()
-    target_type = (target_card.get('type', '') or '').lower()
-    cand_type = (candidate_card.get('type', '') or '').lower()
+    target_guardian = target_card.get('guardian', {})
+    cand_guardian = candidate_card.get('guardian', {})
+    
+    target_text = (target_guardian.get('rulesText', '') or '').lower()
+    cand_text = (cand_guardian.get('rulesText', '') or '').lower()
+    target_type = (target_guardian.get('type', '') or '').lower()
+    cand_type = (cand_guardian.get('type', '') or '').lower()
     
     # Analyze common patterns
     reasons = []
