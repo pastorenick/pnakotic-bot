@@ -15,5 +15,9 @@ lxml==5.1.0
 fuzzywuzzy==0.18.0
 python-Levenshtein==0.25.0
 
+# Vector Embeddings
+sentence-transformers>=2.2.2
+numpy>=1.26.0
+
 # Utilities
 python-dotenv==1.0.0

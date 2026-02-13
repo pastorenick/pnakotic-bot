@@ -58,6 +58,11 @@ async def init_bot_async():
     
     logger.info("Initializing PnakoticBot...")
     
+    # Initialize cache and embeddings
+    from bot.startup import init_cache_directory, ensure_embeddings_exist
+    init_cache_directory()
+    ensure_embeddings_exist()
+    
     # Check required environment variables
     bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
     

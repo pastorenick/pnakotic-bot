@@ -27,7 +27,8 @@ wheels/
 .env
 
 # Cache
-data/cache/*.json
+data/cache/cards.json
+data/cache/faqs.json
 
 # IDE
 .vscode/
