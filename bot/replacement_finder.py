@@ -444,6 +444,145 @@ def find_replacements(
     return candidates[:max_results]
 
 
+def _get_matching_keywords(target_stats: Dict, candidate_stats: Dict) -> List[str]:
+    """
+    Find specific keywords/abilities that match between two cards
+    
+    Args:
+        target_stats: Stats dict for target card
+        candidate_stats: Stats dict for candidate card
+        
+    Returns:
+        List of matching keyword descriptions
+    """
+    target_keywords = set(target_stats['keywords'])
+    candidate_keywords = set(candidate_stats['keywords'])
+    
+    # Find common keywords
+    common = target_keywords & candidate_keywords
+    
+    # Map keywords to user-friendly descriptions
+    keyword_descriptions = {
+        'genesis_trigger': 'genesis',
+        'demise_trigger': 'demise',
+        'card_draw': 'card draw',
+        'direct_damage': 'direct damage',
+        'stat_modification': 'stat buffs',
+        'cost_reduction': 'cost reduction',
+        'search_effect': 'search',
+        'spellcaster': 'spellcaster',
+        'airborne': 'airborne',
+        'flying': 'flying',
+        'deadly': 'deadly',
+        'lifesteal': 'lifesteal',
+        'first strike': 'first strike',
+        'double strike': 'double strike',
+        'vigilant': 'vigilant',
+        'protected': 'protection',
+        'ward': 'ward',
+        'hexproof': 'hexproof',
+        'reach': 'reach',
+        'ephemeral': 'ephemeral',
+        'destroy': 'removal',
+        'exile': 'exile',
+        'return': 'bounce',
+        'token': 'tokens',
+        'sacrifice': 'sacrifice',
+        'burrowing': 'burrowing',
+        'submerge': 'submerge',
+        'draw': 'card draw',  # Map generic 'draw' to 'card draw'
+        'genesis': 'genesis',  # Map generic to specific
+    }
+    
+    # Convert to readable descriptions and deduplicate
+    seen_descs = set()
+    matches = []
+    
+    # Prioritize more specific keywords
+    priority_order = ['genesis_trigger', 'demise_trigger', 'card_draw', 'direct_damage', 
+                      'search_effect', 'stat_modification']
+    
+    # Add priority keywords first
+    for keyword in priority_order:
+        if keyword in common:
+            desc = keyword_descriptions.get(keyword)
+            if desc and desc not in seen_descs:
+                matches.append(desc)
+                seen_descs.add(desc)
+    
+    # Add remaining keywords
+    for keyword in common:
+        desc = keyword_descriptions.get(keyword, keyword.replace('_', ' '))
+        if desc not in seen_descs:
+            matches.append(desc)
+            seen_descs.add(desc)
+    
+    return matches[:3]  # Limit to avoid too much text
+
+
+def _get_semantic_similarity_reason(target_card: Dict, candidate_card: Dict, similarity_score: float) -> str:
+    """
+    Generate a natural language explanation for why cards are semantically similar
+    Based on analyzing the card text and types
+    
+    Args:
+        target_card: Original card dict
+        candidate_card: Candidate card dict
+        similarity_score: Similarity percentage (0-100)
+        
+    Returns:
+        Human-readable explanation
+    """
+    target_text = (target_card.get('rulesText', '') or '').lower()
+    cand_text = (candidate_card.get('rulesText', '') or '').lower()
+    target_type = (target_card.get('type', '') or '').lower()
+    cand_type = (candidate_card.get('type', '') or '').lower()
+    
+    # Analyze common patterns
+    reasons = []
+    
+    # Check for combat-oriented cards
+    combat_keywords = ['damage', 'strike', 'fight', 'destroy', 'deadly', 'lethal', 'power']
+    if any(kw in target_text for kw in combat_keywords) and any(kw in cand_text for kw in combat_keywords):
+        reasons.append('combat-focused')
+    
+    # Check for card advantage
+    card_adv = ['draw', 'search', 'tutor', 'look at']
+    if any(kw in target_text for kw in card_adv) and any(kw in cand_text for kw in card_adv):
+        reasons.append('card advantage')
+    
+    # Check for triggers
+    if 'genesis' in target_text and 'genesis' in cand_text:
+        reasons.append('genesis triggers')
+    if 'demise' in target_text and 'demise' in cand_text:
+        reasons.append('demise triggers')
+    
+    # Check for movement/positioning
+    movement = ['move', 'step', 'drag', 'pull', 'push', 'teleport']
+    if any(kw in target_text for kw in movement) and any(kw in cand_text for kw in movement):
+        reasons.append('movement effects')
+    
+    # Check for removal
+    removal = ['destroy', 'exile', 'banish', 'remove', 'sacrifice']
+    if any(kw in target_text for kw in removal) and any(kw in cand_text for kw in removal):
+        reasons.append('removal')
+    
+    # Check for buffs/stat modification
+    if ('+' in target_text or 'buff' in target_text) and ('+' in cand_text or 'buff' in cand_text):
+        reasons.append('stat buffs')
+    
+    # If no specific reasons, use generic based on score
+    if not reasons:
+        if similarity_score > 80:
+            return 'very similar effects'
+        elif similarity_score > 60:
+            return 'similar effects'
+        else:
+            return 'comparable effects'
+    
+    return ', '.join(reasons[:2])  # Max 2 reasons to keep concise
+
+
 def format_replacement_explanation(target_card: Dict, replacement: Dict) -> str:
     """
     Format explanation of why a card is a good replacement
@@ -459,6 +598,7 @@ def format_replacement_explanation(target_card: Dict, replacement: Dict) -> str:
     score = replacement['score']
     breakdown = replacement['breakdown']
     stats = replacement['stats']
+    target_stats = get_card_stats(target_card)
     
     lines = [f"*{card['name']}* (Match: {score:.0f}%)"]
     
@@ -474,27 +614,52 @@ def format_replacement_explanation(target_card: Dict, replacement: Dict) -> str:
     if stats['elements']:
         lines.append(f"• Elements: {stats['elements']}")
     
-    # Why it matches
+    # Why it matches - build detailed explanation
     reasons = []
     
     # Check if using vector or keyword scoring
     if 'vector' in breakdown:
-        # Vector-based matching
-        if breakdown['vector'] > 45:  # > 64% similarity (45/70)
-            reasons.append("very similar abilities")
-        elif breakdown['vector'] > 30:  # > 43% similarity (30/70)
-            reasons.append("similar abilities")
+        # Vector-based matching - check for keyword matches first
+        matching_keywords = _get_matching_keywords(target_stats, stats)
+        
+        if matching_keywords:
+            # Show specific matching keywords
+            keyword_text = ', '.join(matching_keywords)
+            reasons.append(f"both have {keyword_text}")
+        else:
+            # Use semantic similarity analysis
+            semantic_reason = _get_semantic_similarity_reason(target_card, card, score)
+            if semantic_reason:
+                reasons.append(semantic_reason)
     else:
-        # Keyword-based matching
+        # Keyword-based matching - show specific matches
         if breakdown.get('keywords', 0) > 20:
-            reasons.append("similar abilities")
+            matching_keywords = _get_matching_keywords(target_stats, stats)
+            if matching_keywords:
+                keyword_text = ', '.join(matching_keywords)
+                reasons.append(f"both have {keyword_text}")
+            else:
+                reasons.append("similar abilities")
     
-    if breakdown.get('elements', 0) > 10:
-        reasons.append("same element")
-    if breakdown.get('cost', 0) >= 7:
-        reasons.append("similar cost")
+    # Add element/cost info (only if not too many reasons already)
+    if len(reasons) < 2:
+        if breakdown.get('elements', 0) > 10:
+            reasons.append("same element")
+    if len(reasons) < 3:
+        if breakdown.get('cost', 0) >= 10:  # Exact cost match
+            reasons.append("same cost")
+        elif breakdown.get('cost', 0) >= 5:  # ±1-2 cost
+            reasons.append("similar cost")
     
     if reasons:
-        lines.append(f"• Match: {', '.join(reasons)}")
+        # Remove duplicates while preserving order, and limit to 3 reasons max
+        seen = set()
+        unique_reasons = []
+        for r in reasons:
+            if r not in seen:
+                seen.add(r)
+                unique_reasons.append(r)
+        
+        lines.append(f"• Why: {', '.join(unique_reasons[:3])}")
     
     return '\n'.join(lines)
