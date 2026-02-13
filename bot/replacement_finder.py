@@ -15,9 +15,9 @@ import numpy as np
 # Common Sorcery keywords and abilities (for extraction)
 KEYWORDS = [
     # Combat abilities
-    'airborne', 'burrowing', 'ephemeral', 'flying', 'stealthy', 'unblockable',
+    'airborne', 'burrowing', 'ephemeral', 'flying', 'stealth', 'stealthy', 'unblockable',
     'ambush', 'blitz', 'bloodlust', 'deadly', 'double strike', 'first strike',
-    'lifesteal', 'rampage', 'reach', 'vigilant', 'waterbound',
+    'lethal', 'lifesteal', 'rampage', 'reach', 'submerge', 'vigilant', 'waterbound',
     
     # Protection/Resistance
     'protected', 'shroud', 'ward', 'hexproof', 'indestructible',
@@ -281,6 +281,30 @@ def _calculate_vector_similarity(
         elif cost_diff == 2:
             scores['cost'] = 3.0
     
+    # 4. TACTICAL ROLE BONUS (up to 15% bonus) - Reward similar tactical patterns
+    # This helps cards with same tactical role but different elements/stats still match
+    scores['tactical'] = 0.0
+    source_keywords = set(source_stats.get('keywords', []))
+    candidate_keywords = set(candidate_stats.get('keywords', []))
+    
+    # Ambush/trap tactics (hiding + instant removal)
+    hiding_keywords = {'burrowing', 'submerge', 'stealth', 'stealthy'}
+    kill_keywords = {'lethal', 'deadly', 'destroy'}
+    
+    source_hides = bool(source_keywords & hiding_keywords)
+    source_kills = bool(source_keywords & kill_keywords)
+    candidate_hides = bool(candidate_keywords & hiding_keywords)
+    candidate_kills = bool(candidate_keywords & kill_keywords)
+    
+    if source_hides and source_kills and candidate_hides and candidate_kills:
+        scores['tactical'] += 15.0  # Strong tactical role match
+    
+    # Evasion tactics (flying/airborne/unblockable)
+    evasion_keywords = {'airborne', 'flying', 'unblockable'}
+    if (source_keywords & evasion_keywords) and (candidate_keywords & evasion_keywords):
+        if not (source_hides and source_kills):  # Don't double-count ambush
+            scores['tactical'] += 8.0
+    
     total_score = sum(scores.values())
     
     return total_score, scores
@@ -474,6 +498,7 @@ def _get_matching_keywords(target_stats: Dict, candidate_stats: Dict) -> List[st
         'airborne': 'airborne',
         'flying': 'flying',
         'deadly': 'deadly',
+        'lethal': 'lethal',
         'lifesteal': 'lifesteal',
         'first strike': 'first strike',
         'double strike': 'double strike',
@@ -483,6 +508,8 @@ def _get_matching_keywords(target_stats: Dict, candidate_stats: Dict) -> List[st
         'hexproof': 'hexproof',
         'reach': 'reach',
         'ephemeral': 'ephemeral',
+        'stealth': 'stealth',
+        'stealthy': 'stealth',
         'destroy': 'removal',
         'exile': 'exile',
         'return': 'bounce',
@@ -574,6 +601,23 @@ def _get_semantic_similarity_reason(target_card: Dict, candidate_card: Dict, sim
     if ('+' in target_text or 'buff' in target_text) and ('+' in cand_text or 'buff' in cand_text):
         reasons.append('stat buffs')
     
+    # Check for ambush/trap tactics (hiding + removal/lethal)
+    hiding = ['burrowing', 'submerge', 'stealth']
+    instant_kill = ['lethal', 'deadly', 'destroy']
+    target_hides = any(kw in target_text for kw in hiding)
+    target_kills = any(kw in target_text for kw in instant_kill)
+    cand_hides = any(kw in cand_text for kw in hiding)
+    cand_kills = any(kw in cand_text for kw in instant_kill)
+    
+    if target_hides and target_kills and cand_hides and cand_kills:
+        reasons.append('ambush/trap defenders')
+    
+    # Check for evasion tactics
+    evasion = ['airborne', 'flying', 'stealth', 'stealthy', 'unblockable']
+    if any(kw in target_text for kw in evasion) and any(kw in cand_text for kw in evasion):
+        if 'ambush/trap defenders' not in reasons:  # Don't double-count
+            reasons.append('evasive')
+    
     # If no specific reasons, use generic based on score
     if not reasons:
         if similarity_score > 80:
@@ -629,6 +673,13 @@ def format_replacement_explanation(target_card: Dict, replacement: Dict) -> str:
             # Show specific matching keywords
             keyword_text = ', '.join(matching_keywords)
             reasons.append(f"both have {keyword_text}")
+            
+            # Add tactical role if detected
+            if breakdown.get('tactical', 0) >= 15:
+                semantic_reason = _get_semantic_similarity_reason(target_card, card, score)
+                if semantic_reason and 'ambush/trap' in semantic_reason:
+                    # Prepend tactical role for emphasis
+                    reasons.insert(0, semantic_reason)
         else:
             # Use semantic similarity analysis
             semantic_reason = _get_semantic_similarity_reason(target_card, card, score)
