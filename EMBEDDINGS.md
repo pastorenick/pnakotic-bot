@@ -16,11 +16,17 @@ The bot now uses semantic vector embeddings to find similar cards instead of jus
 
 ### 1. Install Dependencies
 
-First, install the required packages:
-
+**For production (running the bot):**
 ```bash
 pip install -r requirements.txt
 ```
+
+**For development (generating embeddings):**
+```bash
+pip install -r requirements-dev.txt
+```
+
+Note: sentence-transformers is **NOT** needed in production. The bot uses pre-generated embeddings which only require numpy.
 
 ### 2. Generate Embeddings (One-time setup)
 

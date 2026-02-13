@@ -1,13 +1,23 @@
 """
 Generate vector embeddings for all Sorcery TCG cards
 This script should be run once to pre-compute embeddings, and re-run when new cards are added
+
+NOTE: Requires sentence-transformers (pip install sentence-transformers)
+      This is NOT installed in production - only for local development
 """
 
 import json
 import os
 from typing import Dict, List
-from sentence_transformers import SentenceTransformer
-import numpy as np
+
+try:
+    from sentence_transformers import SentenceTransformer
+    import numpy as np
+except ImportError:
+    print("ERROR: sentence-transformers not installed!")
+    print("Install it with: pip install -r requirements-dev.txt")
+    print("Or: pip install sentence-transformers")
+    exit(1)
 
 
 EMBEDDINGS_CACHE_FILE = "data/cache/embeddings.json"

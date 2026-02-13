@@ -1,0 +1,7 @@
+# Development requirements - for generating embeddings locally
+# DO NOT install these in production (too memory intensive)
+
+-r requirements.txt
+
+# Sentence transformers for generating embeddings
+sentence-transformers>=2.2.2

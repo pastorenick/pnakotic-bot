@@ -14,6 +14,14 @@ if [ -d "venv" ]; then
     source venv/bin/activate
 fi
 
+# Check if sentence-transformers is installed
+echo "Checking dependencies..."
+python -c "import sentence_transformers" 2>/dev/null || {
+    echo "ERROR: sentence-transformers not installed!"
+    echo "Installing development dependencies..."
+    pip install -r requirements-dev.txt
+}
+
 # Generate embeddings
 echo "Generating new embeddings..."
 python -m bot.generate_embeddings
