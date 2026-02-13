@@ -105,6 +105,13 @@ def extract_keywords(rules_text: str) -> List[str]:
     if 'opposite edges' in text_lower:
         found_keywords.append('edge_crossing')
     
+    # Mass removal / board wipe (affects multiple targets)
+    # Look for 'each' or 'all' combined with damage/removal
+    if 'each' in text_lower or 'all' in text_lower:
+        removal_words = ['damage', 'destroy', 'kill', 'exile', 'banish']
+        if any(word in text_lower for word in removal_words):
+            found_keywords.append('mass_removal')
+    
     return list(set(found_keywords))  # Remove duplicates
 
 
@@ -324,6 +331,10 @@ def _calculate_vector_similarity(
     if 'edge_crossing' in source_keywords and 'edge_crossing' in candidate_keywords:
         scores['tactical'] += 15.0  # Very specific strategic pattern
     
+    # Mass removal / board wipe (affects multiple targets)
+    if 'mass_removal' in source_keywords and 'mass_removal' in candidate_keywords:
+        scores['tactical'] += 12.0  # Strong control pattern match
+    
     total_score = sum(scores.values())
     
     return total_score, scores
@@ -515,6 +526,7 @@ def _get_matching_keywords(target_stats: Dict, candidate_stats: Dict) -> List[st
         'search_effect': 'search',
         'threshold_manipulation': 'threshold manipulation',
         'edge_crossing': 'border crossing',
+        'mass_removal': 'board wipe',
         'spellcaster': 'spellcaster',
         'airborne': 'airborne',
         'flying': 'flying',
@@ -648,6 +660,17 @@ def _get_semantic_similarity_reason(target_card: Dict, candidate_card: Dict, sim
     edge_patterns = ['edge', 'connected']
     if all(kw in target_text for kw in edge_patterns) and all(kw in cand_text for kw in edge_patterns):
         reasons.append('border crossing')
+    
+    # Check for mass removal / board wipe
+    mass_patterns = ['each', 'all']
+    removal_patterns = ['damage', 'destroy', 'kill', 'exile']
+    target_mass = any(kw in target_text for kw in mass_patterns)
+    target_removal = any(kw in target_text for kw in removal_patterns)
+    cand_mass = any(kw in cand_text for kw in mass_patterns)
+    cand_removal = any(kw in cand_text for kw in removal_patterns)
+    
+    if target_mass and target_removal and cand_mass and cand_removal:
+        reasons.append('board wipe')
     
     # If no specific reasons, use generic based on score
     if not reasons:
