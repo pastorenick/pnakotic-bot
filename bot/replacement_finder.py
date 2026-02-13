@@ -94,6 +94,17 @@ def extract_keywords(rules_text: str) -> List[str]:
     if 'search' in text_lower or 'look at' in text_lower:
         found_keywords.append('search_effect')
     
+    # Threshold manipulation
+    if 'threshold' in text_lower:
+        if any(phrase in text_lower for phrase in ["doesn't provide", "provide no", "provides no", "lose", "only provide"]):
+            found_keywords.append('threshold_manipulation')
+    
+    # Edge/border crossing (movement enhancement)
+    if re.search(r'edge[s]?\s+(of\s+the\s+realm\s+)?(are\s+|were\s+)?connected', text_lower):
+        found_keywords.append('edge_crossing')
+    if 'opposite edges' in text_lower:
+        found_keywords.append('edge_crossing')
+    
     return list(set(found_keywords))  # Remove duplicates
 
 
@@ -305,6 +316,14 @@ def _calculate_vector_similarity(
         if not (source_hides and source_kills):  # Don't double-count ambush
             scores['tactical'] += 8.0
     
+    # Threshold manipulation (resource denial/control)
+    if 'threshold_manipulation' in source_keywords and 'threshold_manipulation' in candidate_keywords:
+        scores['tactical'] += 12.0  # Strong utility pattern match
+    
+    # Edge crossing / border manipulation (enhanced movement)
+    if 'edge_crossing' in source_keywords and 'edge_crossing' in candidate_keywords:
+        scores['tactical'] += 15.0  # Very specific strategic pattern
+    
     total_score = sum(scores.values())
     
     return total_score, scores
@@ -494,6 +513,8 @@ def _get_matching_keywords(target_stats: Dict, candidate_stats: Dict) -> List[st
         'stat_modification': 'stat buffs',
         'cost_reduction': 'cost reduction',
         'search_effect': 'search',
+        'threshold_manipulation': 'threshold manipulation',
+        'edge_crossing': 'border crossing',
         'spellcaster': 'spellcaster',
         'airborne': 'airborne',
         'flying': 'flying',
@@ -617,6 +638,16 @@ def _get_semantic_similarity_reason(target_card: Dict, candidate_card: Dict, sim
     if any(kw in target_text for kw in evasion) and any(kw in cand_text for kw in evasion):
         if 'ambush/trap defenders' not in reasons:  # Don't double-count
             reasons.append('evasive')
+    
+    # Check for threshold manipulation
+    threshold_patterns = ['threshold', 'provide']
+    if all(kw in target_text for kw in threshold_patterns) and all(kw in cand_text for kw in threshold_patterns):
+        reasons.append('threshold manipulation')
+    
+    # Check for edge/border crossing
+    edge_patterns = ['edge', 'connected']
+    if all(kw in target_text for kw in edge_patterns) and all(kw in cand_text for kw in edge_patterns):
+        reasons.append('border crossing')
     
     # If no specific reasons, use generic based on score
     if not reasons:
