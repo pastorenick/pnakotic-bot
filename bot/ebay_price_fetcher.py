@@ -450,13 +450,6 @@ def search_ebay_sold_listings(card_name: str, limit: int = 10, foil_only: bool =
         'keywords': search_query,
         'paginationInput.entriesPerPage': min(limit, 100),  # Max 100 per page
         'sortOrder': 'EndTimeSoonest',  # Most recent sales first
-        # Filter for sold items only
-        'itemFilter(0).name': 'SoldItemsOnly',
-        'itemFilter(0).value': 'true',
-        # Filter for completed listings
-        'itemFilter(1).name': 'ListingType',
-        'itemFilter(1).value(0)': 'FixedPrice',
-        'itemFilter(1).value(1)': 'Auction',
     }
     
     try:
