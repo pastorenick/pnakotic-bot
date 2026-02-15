@@ -16,6 +16,14 @@ from bot.card_fetcher import search_card, get_card_image_url, load_cards
 from bot.faq_scraper import get_card_faq, load_faqs
 from bot.utils import is_rate_limited, format_card_message
 from bot.replacement_finder import find_replacements, format_replacement_explanation
+from bot.ebay_price_fetcher import (
+    search_ebay_listings, 
+    get_price_statistics, 
+    format_price_message,
+    search_ebay_sold_listings,
+    format_sold_price_message
+)
+from bot.justtcg_price_fetcher import get_card_prices
 import os
 import logging
 from typing import Dict, List
@@ -37,10 +45,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "📋 *Commands:*\n"
         "`/card <name>` - Get card image and FAQ\n"
         "`/replace <name>` - Find similar replacement cards\n"
+        "`/price <name> [foil]` - Check active listings on eBay\n"
+        "`/pricesold <name> [foil]` - Check historical sold prices\n"
         "`/help` - Show this help message\n\n"
         "📝 *Examples:*\n"
         "`/card Blink`\n"
-        "`/replace Apprentice Wizard`\n\n"
+        "`/replace Apprentice Wizard`\n"
+        "`/price Blink`\n"
+        "`/price Archmage foil`\n"
+        "`/pricesold Blink`\n\n"
         "💡 *Tip:* I can handle typos and partial names!\n\n"
         "🔗 Data from [curiosa.io](https://curiosa.io)"
     )
@@ -378,6 +391,237 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             pass
 
 
+async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle /price <card_name> [foil] command
+    Shows market prices from eBay and JustTCG (if available)
+    Add 'foil' keyword to search for foil versions: /price Archmage foil
+    """
+    # Check rate limiting
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    is_group = update.effective_chat.type in ['group', 'supergroup']
+    
+    if is_rate_limited(user_id if not is_group else chat_id, is_group):
+        error_msg = "⏳ Rate limit exceeded. Please wait a moment."
+        await update.message.reply_text(error_msg)
+        return
+    
+    # Parse card name from command
+    if not context.args:
+        if is_group:
+            msg = "❌ Provide card name"
+        else:
+            msg = "❌ Please provide a card name.\nExample: `/price Blink` or `/price Archmage foil`"
+        
+        await update.message.reply_text(msg, parse_mode='Markdown')
+        return
+    
+    # Check if user wants foil prices
+    args_list = list(context.args)
+    foil_only = False
+    
+    # Check if 'foil' is in the arguments (case-insensitive)
+    if args_list and args_list[-1].lower() == 'foil':
+        foil_only = True
+        args_list = args_list[:-1]  # Remove 'foil' from card name
+    
+    query = ' '.join(args_list)
+    
+    # Load cards to verify the card exists
+    cards = load_cards()
+    if not cards:
+        await update.message.reply_text("❌ Failed to load card database")
+        return
+    
+    # Search for the card to validate it exists
+    result = search_card(query, cards)
+    
+    if not result:
+        if is_group:
+            await update.message.reply_text("❌ Card not found")
+        else:
+            await update.message.reply_text(f"❌ No card found for '{query}'")
+        return
+    
+    # Handle multiple matches
+    if isinstance(result, list):
+        if is_group:
+            msg = f"❌ '{query}' matches multiple cards. Be more specific."
+        else:
+            card_names = [c['name'] for c in result[:5]]
+            msg = f"❌ Multiple cards match '{query}':\n" + '\n'.join(f"• {n}" for n in card_names)
+        
+        await update.message.reply_text(msg)
+        return
+    
+    # Single card found
+    card = result
+    card_name = card['name']
+    
+    # Build search message
+    foil_text = " (Foil)" if foil_only else " (Non-Foil)"
+    
+    # Show "searching" message
+    thinking_msg = await update.message.reply_text(f"💰 Searching market prices for *{card_name}{foil_text}*...", parse_mode='Markdown')
+    
+    try:
+        # Fetch prices from multiple sources
+        response_parts = []
+        has_any_data = False
+        
+        # 1. Try JustTCG first (usually more reliable for TCG prices)
+        try:
+            justtcg_message = get_card_prices(card_name)
+            # get_card_prices returns formatted message ready for display
+            # Only add if it contains actual price data (not just "not available" message)
+            if justtcg_message and "not available yet" not in justtcg_message.lower():
+                response_parts.append(justtcg_message)
+                has_any_data = True
+            elif justtcg_message:
+                # Still include the "not available" message so users know why
+                response_parts.append(justtcg_message)
+        except Exception as e:
+            logger.warning(f"JustTCG price fetch failed: {e}")
+        
+        # 2. Try eBay
+        try:
+            ebay_listings = search_ebay_listings(card_name, limit=10, foil_only=foil_only)
+            if ebay_listings and len(ebay_listings) > 0:
+                stats = get_price_statistics(ebay_listings)
+                ebay_message = format_price_message(card_name, ebay_listings, stats, foil_only=foil_only)
+                if "❌" not in ebay_message:  # Only add if successful
+                    response_parts.append(ebay_message)
+                    has_any_data = True
+        except Exception as e:
+            logger.warning(f"eBay price fetch failed: {e}")
+        
+        # Build final response
+        if has_any_data:
+            response = '\n\n---\n\n'.join(response_parts)
+        else:
+            # No data from any source
+            response = (
+                f"💰 *Market Prices for {card_name}*\n\n"
+                "❌ No pricing data available from any source.\n\n"
+                "*Possible reasons:*\n"
+                "• API credentials not configured\n"
+                "• Card not yet listed on marketplaces\n"
+                "• Network connectivity issue\n\n"
+                "💡 Try checking:\n"
+                "• JustTCG.com directly\n"
+                "• Sorcery Marketplace Discord"
+            )
+        
+        await thinking_msg.edit_text(response, parse_mode='Markdown', disable_web_page_preview=True)
+        
+    except Exception as e:
+        logger.error(f"Error fetching prices: {e}", exc_info=True)
+        await thinking_msg.edit_text("❌ Failed to fetch market prices. Try again later.")
+
+
+async def pricesold_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle /pricesold <card_name> [foil] command
+    Shows historical sold prices from eBay completed listings
+    Add 'foil' keyword to search for foil versions: /pricesold Archmage foil
+    """
+    # Check rate limiting
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    is_group = update.effective_chat.type in ['group', 'supergroup']
+    
+    if is_rate_limited(user_id if not is_group else chat_id, is_group):
+        error_msg = "⏳ Rate limit exceeded. Please wait a moment."
+        await update.message.reply_text(error_msg)
+        return
+    
+    # Parse card name from command
+    if not context.args:
+        if is_group:
+            msg = "❌ Provide card name"
+        else:
+            msg = "❌ Please provide a card name.\nExample: `/pricesold Blink` or `/pricesold Archmage foil`"
+        
+        await update.message.reply_text(msg, parse_mode='Markdown')
+        return
+    
+    # Check if user wants foil prices
+    args_list = list(context.args)
+    foil_only = False
+    
+    # Check if 'foil' is in the arguments (case-insensitive)
+    if args_list and args_list[-1].lower() == 'foil':
+        foil_only = True
+        args_list = args_list[:-1]  # Remove 'foil' from card name
+    
+    query = ' '.join(args_list)
+    
+    # Load cards to verify the card exists
+    cards = load_cards()
+    if not cards:
+        await update.message.reply_text("❌ Failed to load card database")
+        return
+    
+    # Search for the card to validate it exists
+    result = search_card(query, cards)
+    
+    if not result:
+        if is_group:
+            await update.message.reply_text("❌ Card not found")
+        else:
+            await update.message.reply_text(f"❌ No card found for '{query}'")
+        return
+    
+    # Handle multiple matches
+    if isinstance(result, list):
+        if is_group:
+            msg = f"❌ '{query}' matches multiple cards. Be more specific."
+        else:
+            card_names = [c['name'] for c in result[:5]]
+            msg = f"❌ Multiple cards match '{query}':\n" + '\n'.join(f"• {n}" for n in card_names)
+        
+        await update.message.reply_text(msg)
+        return
+    
+    # Single card found
+    card = result
+    card_name = card['name']
+    
+    # Build search message
+    foil_text = " (Foil)" if foil_only else " (Non-Foil)"
+    
+    # Show "searching" message
+    thinking_msg = await update.message.reply_text(f"📊 Searching sold prices for *{card_name}{foil_text}*...", parse_mode='Markdown')
+    
+    try:
+        # Fetch sold listings from eBay Finding API
+        ebay_sold_listings = search_ebay_sold_listings(card_name, limit=20, foil_only=foil_only)
+        
+        if ebay_sold_listings and len(ebay_sold_listings) > 0:
+            stats = get_price_statistics(ebay_sold_listings)
+            response = format_sold_price_message(card_name, ebay_sold_listings, stats, foil_only=foil_only)
+        else:
+            # No sold listings found
+            response = (
+                f"📊 *Sold Prices for {card_name}{foil_text}*\n\n"
+                "❌ No completed sales found on eBay.\n\n"
+                "*Possible reasons:*\n"
+                "• Card hasn't sold recently on eBay\n"
+                "• API credentials not configured\n"
+                "• Network connectivity issue\n\n"
+                "💡 Try:\n"
+                "• `/price` for current active listings\n"
+                "• Check TCGPlayer or Sorcery Marketplace Discord"
+            )
+        
+        await thinking_msg.edit_text(response, parse_mode='Markdown', disable_web_page_preview=True)
+        
+    except Exception as e:
+        logger.error(f"Error fetching sold prices: {e}", exc_info=True)
+        await thinking_msg.edit_text("❌ Failed to fetch sold prices. Try again later.")
+
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle errors gracefully"""
     logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
@@ -409,6 +653,8 @@ def setup_bot() -> Application:
     application.add_handler(CommandHandler('help', help_command))
     application.add_handler(CommandHandler('card', card_command))
     application.add_handler(CommandHandler('replace', replace_command))
+    application.add_handler(CommandHandler('price', price_command))
+    application.add_handler(CommandHandler('pricesold', pricesold_command))
     
     # Add callback query handler for inline keyboard buttons
     application.add_handler(CallbackQueryHandler(button_callback))
