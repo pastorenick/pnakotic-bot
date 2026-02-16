@@ -54,7 +54,9 @@ def get_sorcery_game_id() -> Optional[str]:
         )
         response.raise_for_status()
         
-        games = response.json()
+        # API returns {"data": [...], "_metadata": {...}}
+        response_data = response.json()
+        games = response_data.get("data", [])
         
         # Look for Sorcery in the games list
         # Try common variations of the game name
@@ -144,33 +146,58 @@ def _format_price_change(change: Optional[float]) -> str:
     return f"{emoji} {sign}{change:.1f}%"
 
 
-def _format_variant_prices(variants: List[Dict[str, Any]]) -> str:
+def _format_variant_prices(variants: List[Dict[str, Any]], foil_only: bool = False) -> str:
     """Format pricing information from card variants."""
     if not variants:
         return "No pricing data available"
     
     lines = []
     
-    # Find Near Mint Normal variant (most common reference point)
-    nm_normal = None
-    other_variants = []
+    # Separate variants by printing type
+    normal_variants = []
+    foil_variants = []
     
     for variant in variants:
+        printing = variant.get("printing", "Normal")
+        if printing.lower() in ["foil", "holo", "holographic"]:
+            foil_variants.append(variant)
+        else:
+            normal_variants.append(variant)
+    
+    # If user wants foil only, only show foil variants
+    if foil_only:
+        target_variants = foil_variants
+        if not target_variants:
+            return "No foil pricing data available"
+    else:
+        target_variants = variants
+    
+    # Find Near Mint variant (most common reference point)
+    nm_variant = None
+    other_variants = []
+    
+    for variant in target_variants:
         condition = variant.get("condition", "")
-        printing = variant.get("printing", "")
         
-        if condition == "Near Mint" and printing == "Normal":
-            nm_normal = variant
+        if condition == "Near Mint":
+            if not nm_variant:  # Use first Near Mint found
+                nm_variant = variant
+            else:
+                other_variants.append(variant)
         else:
             other_variants.append(variant)
     
-    # Show Near Mint Normal first if available
-    if nm_normal:
-        price = nm_normal.get("price")
-        changes = nm_normal.get("priceChanges", {})
+    # Show Near Mint first if available
+    if nm_variant:
+        price = nm_variant.get("price")
+        printing = nm_variant.get("printing", "Normal")
+        changes = nm_variant.get("priceChanges", {})
         
         if price:
-            lines.append(f"📊 *Near Mint*: ${price:.2f}")
+            label = "*Near Mint*"
+            if printing != "Normal":
+                label += f" ({printing})"
+            lines.append(f"📊 {label}: ${price:.2f}")
             
             # Add price changes if available
             change_parts = []
@@ -199,7 +226,7 @@ def _format_variant_prices(variants: List[Dict[str, Any]]) -> str:
     return "\n".join(lines) if lines else "No pricing data available"
 
 
-def format_justtcg_prices(search_result: Optional[Dict[str, Any]]) -> str:
+def format_justtcg_prices(search_result: Optional[Dict[str, Any]], foil_only: bool = False) -> str:
     """
     Format JustTCG pricing data for Telegram display.
     Handles both when data is available and when Sorcery isn't in catalog.
@@ -216,10 +243,12 @@ def format_justtcg_prices(search_result: Optional[Dict[str, Any]]) -> str:
     card_name = card.get("name", "Unknown Card")
     variants = card.get("variants", [])
     
+    foil_text = " (Foil)" if foil_only else ""
+    
     # Build the message
     message_parts = [
-        f"💎 *JustTCG Prices for {card_name}*\n",
-        _format_variant_prices(variants),
+        f"💎 *JustTCG Prices for {card_name}{foil_text}*\n",
+        _format_variant_prices(variants, foil_only=foil_only),
         "\n🔗 Data from JustTCG"
     ]
     
@@ -235,10 +264,10 @@ def format_justtcg_prices(search_result: Optional[Dict[str, Any]]) -> str:
     return "\n".join(message_parts)
 
 
-def get_card_prices(card_name: str) -> str:
+def get_card_prices(card_name: str, foil_only: bool = False) -> str:
     """
     Main entry point for getting JustTCG prices.
     Returns formatted message ready for Telegram.
     """
     search_result = search_card_prices(card_name)
-    return format_justtcg_prices(search_result)
+    return format_justtcg_prices(search_result, foil_only=foil_only)

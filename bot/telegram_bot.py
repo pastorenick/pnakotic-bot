@@ -469,28 +469,31 @@ async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Fetch prices from multiple sources
         response_parts = []
         has_any_data = False
+        justtcg_available = False
         
-        # 1. Try JustTCG first (usually more reliable for TCG prices)
+        # 1. Try JustTCG first (primary source - more reliable for TCG prices)
         try:
-            justtcg_message = get_card_prices(card_name)
+            justtcg_message = get_card_prices(card_name, foil_only=foil_only)
             # get_card_prices returns formatted message ready for display
             # Only add if it contains actual price data (not just "not available" message)
             if justtcg_message and "not available yet" not in justtcg_message.lower():
                 response_parts.append(justtcg_message)
                 has_any_data = True
-            elif justtcg_message:
-                # Still include the "not available" message so users know why
-                response_parts.append(justtcg_message)
+                justtcg_available = True
         except Exception as e:
             logger.warning(f"JustTCG price fetch failed: {e}")
         
-        # 2. Try eBay
+        # 2. Try eBay as fallback/supplementary source
         try:
             ebay_listings = search_ebay_listings(card_name, limit=10, foil_only=foil_only)
             if ebay_listings and len(ebay_listings) > 0:
                 stats = get_price_statistics(ebay_listings)
                 ebay_message = format_price_message(card_name, ebay_listings, stats, foil_only=foil_only)
                 if "❌" not in ebay_message:  # Only add if successful
+                    # If JustTCG is available, add eBay as supplementary data
+                    if justtcg_available:
+                        # Add a note that this is supplementary eBay data
+                        ebay_message = ebay_message.replace("📊 *eBay Active Listings", "📊 *eBay Active Listings (Supplementary)", 1)
                     response_parts.append(ebay_message)
                     has_any_data = True
         except Exception as e:
@@ -505,11 +508,11 @@ async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 f"💰 *Market Prices for {card_name}*\n\n"
                 "❌ No pricing data available from any source.\n\n"
                 "*Possible reasons:*\n"
-                "• API credentials not configured\n"
                 "• Card not yet listed on marketplaces\n"
+                "• API credentials not configured\n"
                 "• Network connectivity issue\n\n"
                 "💡 Try checking:\n"
-                "• JustTCG.com directly\n"
+                "• JustTCG.com (primary source)\n"
                 "• Sorcery Marketplace Discord"
             )
         
